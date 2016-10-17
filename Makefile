@@ -6,7 +6,7 @@ INC=include
 # Compiler
 NVCC = nvcc 
 NVCCFLAGS = -O3 -std=c++11 -lineinfo
-NVCCLIBS =  -lcudart -lcusparse #-lcudart -lcublas -lcusparse
+NVCCLIBS =  -lcudart -lcusparse -lcudart -lcublas -lcusparse
 
 CXX = icpc
 CXXFLAGS = -O3 -std=c++11
@@ -18,13 +18,26 @@ build_all: distclean mkdir blas blas_m sparse sparse_m blas_blocked blas_m_block
 mkd:
 	mkdir -p $(BIN)
 
+#cuSparse thrust, blocked affinity matrix, initially matched
+sparse_thrust_m_blocked: $(SRC)/cuSparse_thrust_blocked_matched.cu mkd 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS)  
+
 #cuBLAS, full affinity matrix
 blas: $(SRC)/cuBLAS.cu mkd 
-	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS) 
 
 #cuBLAS, full affinity matrix, initially matched
 blas_m: $(SRC)/cuBLAS_matched.cu mkd 
-	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS) 
+
+#cuBLAS, blocked affinity matrix
+blas_blocked: $(SRC)/cuBLAS_blocked.cu mkd 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS) 
+
+#cuBLAS, blocked affinity matrix, initially matched
+blas_m_blocked: $(SRC)/cuBLAS_blocked_matched.cu mkd 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS) 
+
 
 #cuSparse, full affinity matrix
 sparse_m: $(SRC)/cuSparse_matched.cu mkd 
@@ -33,22 +46,13 @@ sparse_m: $(SRC)/cuSparse_matched.cu mkd
 #cuSparse, full affinity matrix, initially matched
 #sparse_m: $(SRC)/cuSparse_matched.cu mkd 
 #	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
-
-#cuBLAS, blocked affinity matrix
-blas_blocked: $(SRC)/cuBLAS_blocked.cu mkd 
-	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
-
-#cuBLAS, blocked affinity matrix, initially matched
-blas_m_blocked: $(SRC)/cuBLAS_blocked_matched.cu mkd 
-	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
-
 #cuSparse, blocked affinity matrix
 sparse_blocked: $(SRC)/cuSparse_blocked.cu mkd 
 	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
 
 #cuSparse, blocked affinity matrix, initially matched
 sparse_m_blocked: $(SRC)/cuSparse_blocked_matched.cu mkd 
-	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ 
+	$(NVCC) $(NVCCFLAGS) $< -I$(INC) -o $(BIN)/$@ $(NVCCLIBS) 
 
 #mkl, blocked affinity matrix
 mkl_blocked: $(SRC)/mkl_blocked.cpp mkd 
@@ -63,6 +67,9 @@ mkl_m: $(SRC)/mkl_matched.cpp mkd
 	$(CXX) $(CXXFLAGS) $< -I$(INC) -I/usr/include -o $(BIN)/$@ $(CXXLIBS)
 
 
+run_blocked_stm: sparse_thrust_m_blocked
+	$(BIN)/$< Input/img1 8 Input/img2 5 Input/matches.txt 10
+	#$(BIN)/$< Input/building1_appr 683 Input/building2 1496 Input/building_matches 2000
 run_b: blas
 	$(BIN)/$< Input/ranch1_appr 62 Input/ranch2 66
 

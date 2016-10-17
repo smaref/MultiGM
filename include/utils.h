@@ -86,6 +86,7 @@ struct createCOO {
   }
 };
 
+
 template <class T>
 T *AffinityMatrixCtor(T *distance1, T *distance2, int nrows1,
                       int nrows2) {
@@ -114,6 +115,7 @@ T *AffinityMatrixCtor(T *distance1, T *distance2, int nrows1,
 
   return affinity;
 }
+
 
 template <class T>
 T *AffinityInitialMatches(T *distance1, T *distance2, int nrows1,
@@ -144,6 +146,7 @@ T *AffinityInitialMatches(T *distance1, T *distance2, int nrows1,
   return affinity_matches;
 }
 
+
 template <class T>
 void CompressMatrix(h_vec_t<T> &values, h_vec_t<int> &columns,
                     h_vec_t<int> &row_index, T *matrix, int nrows, int ncols) {
@@ -163,6 +166,8 @@ void CompressMatrix(h_vec_t<T> &values, h_vec_t<int> &columns,
     row_index.push_back(offset + row_index.back());
   }
 }
+
+
 struct Affinity {
   int key;
   Affinity(int _key) : key(_key) {}
@@ -174,6 +179,7 @@ struct Affinity {
       return 0;
   }
 };
+
 
 // square<T> computes the square of a number f(x) -> x*x
 struct square {

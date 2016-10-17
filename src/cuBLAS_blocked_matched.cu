@@ -27,13 +27,16 @@ int main(int argc, char *argv[]) {
   unsigned num_feat_2 = atoi(argv[4]);
   ReadMatrix(distance_2, argv[3], num_feat_2);
 #ifdef ACCELERATE
-  d_vec_t<unsigned> d_distance_2 = distance_2;
+  d_vec_t<double> d_distance_2 = distance_2;
 #endif
 
   unsigned num_iters = 1;
   if (8 == argc)
     num_iters = atoi(argv[7]);
-
+  
+  /**************************************************
+  * find unique values of distance1 and their indices
+  ***************************************************/
 #ifdef ACCELERATE
   d_vec_t<unsigned> d_uniq_keys = FindUniques(d_distance_1);
   d_uniq_keys.erase(
@@ -87,10 +90,13 @@ int main(int argc, char *argv[]) {
                        keys_idcs[i].end());
   }
 #endif
-
+  
+  /************************************************
+  *         construct affinity blocks             *
+  ************************************************/
   unsigned len_distance_2 = num_feat_2 * num_feat_2;
-#ifdef ACCELERATE
 
+#ifdef ACCELERATE
   d_vec_t<double> d_affinity_blocks(d_uniq_keys.size() * len_distance_2);
   for (int i = 0; i < d_uniq_keys.size(); ++i) {
     transform(d_distance_2.begin(), d_distance_2.end(),
@@ -106,19 +112,24 @@ int main(int argc, char *argv[]) {
   }
 #endif
 
+  
+  /************************************************
+  *           initialize eigen vectors            *
+  ************************************************/
   unsigned len_eigen_vec = num_feat_1 * num_feat_2;
-  d_vec_t<double> eigen_vec_new(len_eigen_vec);
-  fill(eigen_vec_new.begin(), eigen_vec_new.end(), 0);
-
-  d_vec_t<double> eigen_vec_old(len_eigen_vec);
+  
+  d_vec_t<double> d_eigen_vec_new(len_eigen_vec);
+  d_vec_t<double> d_eigen_vec_old(len_eigen_vec);
   norm = 1.0 / sqrt(len_eigen_vec);
-  fill(eigen_vec_old.begin(), eigen_vec_old.end(), norm);
+  fill(d_eigen_vec_old.begin(), d_eigen_vec_old.end(), norm);
+
 #if ACCELERATE
   int num_keys = d_uniq_keys.size();
 #else
   int num_keys = uniq_keys.size();
   d_vec_t<double> d_affinity_blocks = affinity_blocks;
 #endif
+
   cublasHandle_t handle;
   cublasCreate(&handle);
 
@@ -145,25 +156,25 @@ int main(int argc, char *argv[]) {
             handle, CUBLAS_OP_N, num_feat_2, num_feat_2, &alpha,
             raw_pointer_cast(d_affinity_blocks.data()) + i * len_distance_2,
             num_feat_2,
-            raw_pointer_cast(eigen_vec_old.data()) + col * num_feat_2, 1, &beta,
-            raw_pointer_cast(eigen_vec_new.data()) + row * num_feat_2, 1);
+            raw_pointer_cast(d_eigen_vec_old.data()) + col * num_feat_2, 1, &beta,
+            raw_pointer_cast(d_eigen_vec_new.data()) + row * num_feat_2, 1);
       }
     }
 
     double init = 0;
     norm =
-        std::sqrt(transform_reduce(eigen_vec_new.begin(), eigen_vec_new.end(),
+        std::sqrt(transform_reduce(d_eigen_vec_new.begin(), d_eigen_vec_new.end(),
                                    square(), init, thrust::plus<double>()));
 
-    transform(eigen_vec_new.begin(), eigen_vec_new.end(), eigen_vec_old.begin(),
+    transform(d_eigen_vec_new.begin(), d_eigen_vec_new.end(), d_eigen_vec_old.begin(),
               division(norm));
 
-    fill(eigen_vec_new.begin(), eigen_vec_new.end(), 0);
+    fill(d_eigen_vec_new.begin(), d_eigen_vec_new.end(), 0);
   }
 
-  for (int i = 0; i < eigen_vec_old.size(); i++) {
-    std::cout << "eigen new value = " << eigen_vec_new[i] << "  ";
-    std::cout << "eigen old value = " << eigen_vec_old[i] << std::endl;
+  for (int i = 0; i < d_eigen_vec_old.size(); i++) {
+    std::cout << "d_eigen new value = " << d_eigen_vec_new[i] << "  ";
+    std::cout << "d_eigen old value = " << d_eigen_vec_old[i] << std::endl;
   }
 
   cublasDestroy(handle);
