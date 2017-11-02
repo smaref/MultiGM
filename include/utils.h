@@ -18,10 +18,11 @@
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/sort.h>
+#include <thrust/tuple.h>
 #include <thrust/unique.h>
 using namespace thrust;
 
-#define SIGMA 5.0
+#define SIGMA 3.0
 
 #define ZIP2(X, Y) make_zip_iterator(make_tuple(X, Y))
 #define ZIP3(X, Y, Z) make_zip_iterator(make_tuple(X, Y, Z))
@@ -38,6 +39,10 @@ template <typename T1, typename T2>
 using d_zip_iter_t =
     zip_iterator<tuple<typename d_vec_t<T1>::iterator, counting_iterator<T2>>>;
 typedef tuple<double, int, int> triple_tuple_t;
+
+typedef tuple<h_vec_t<double>, h_vec_t<int>, h_vec_t<int>> vec_tuple_t;
+typedef std::tuple<std::vector<double>, std::vector<int>, std::vector<int>>
+    stdvec_tuple_t;
 
 struct IsZero {
   __host__ __device__ int operator()(const triple_tuple_t &x) const {
@@ -62,6 +67,288 @@ struct IsLessThan {
   __host__ __device__ int operator()(const int &x) const { return (x < value); }
 };
 
+template <class T>
+T *AffinityMatrixCtor(T *distance1, T *distance2, T *distance3, int nrows1,
+                      int nrows2, int nrows3) {
+
+  T *affinity = new T[nrows1 * nrows1 * nrows2 * nrows2 * nrows3 * nrows3];
+
+  int count = 0;
+
+  for (int l = 0; l < nrows1 * nrows2 * nrows3; ++l) {
+    for (int i = 0; i < nrows1; ++i) {
+      for (int j = 0; j < nrows2; ++j) {
+        for (int k = 0; k < nrows3; ++k) {
+
+          // affinity[count] =
+          //    fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+          //         distance2[j + ((l / nrows3) % nrows2) * nrows2] -
+          //         distance3[k + (l % nrows3) * nrows3]);
+
+          if (distance1[i + (l / (nrows2 * nrows3)) * nrows1] -
+                  distance2[j + ((l / nrows3) % nrows2) * nrows2] <
+              distance3[k + (l % nrows3) * nrows3] <
+              distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                  distance2[j + ((l / nrows3) % nrows2) * nrows2]) {
+            affinity[count] =
+                (4.5 *
+                 sqrt(3 * fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] -
+                               distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] -
+                           distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(-distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                           distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                           distance3[k + (l % nrows3) * nrows3]))) /
+                (pow(distance1[i + (l / (nrows2 * nrows3)) * nrows1], 2) +
+                 pow(distance2[j + ((l / nrows3) % nrows2) * nrows2], 2) +
+                 pow(distance3[k + (l % nrows3) * nrows3], 2));
+          } else
+            affinity[count] = 0;
+          count++;
+        }
+      }
+    }
+  }
+  return affinity;
+}
+
+template <class T>
+stdvec_tuple_t AffinityOrigCoo(T *distance1, T *distance2, T *distance3,
+                               unsigned nrows1, unsigned nrows2,
+                               unsigned nrows3) {
+  std::vector<double> values;
+  std::vector<int> columns;
+  std::vector<int> rows;
+
+  int count = 0;
+
+  for (int l = 0; l < nrows1 * nrows2 * nrows3; ++l) {
+    for (int i = 0; i < nrows1; ++i) {
+      for (int j = 0; j < nrows2; ++j) {
+        for (int k = 0; k < nrows3; ++k) {
+
+          if (distance1[i + (l / (nrows2 * nrows3)) * nrows1] -
+                  distance2[j + ((l / nrows3) % nrows2) * nrows2] <
+              distance3[k + (l % nrows3) * nrows3] <
+              distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                  distance2[j + ((l / nrows3) % nrows2) * nrows2]) {
+            double val =
+                (4.5 *
+                 sqrt(3 * fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] -
+                               distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] -
+                           distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(-distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                           distance3[k + (l % nrows3) * nrows3]) *
+                      fabs(distance1[i + (l / (nrows2 * nrows3)) * nrows1] +
+                           distance2[j + ((l / nrows3) % nrows2) * nrows2] +
+                           distance3[k + (l % nrows3) * nrows3]))) /
+                (pow(distance1[i + (l / (nrows2 * nrows3)) * nrows1], 2) +
+                 pow(distance2[j + ((l / nrows3) % nrows2) * nrows2], 2) +
+                 pow(distance3[k + (l % nrows3) * nrows3], 2));
+            if (val != 0) {
+              values.push_back(val);
+              rows.push_back(l);
+              columns.push_back(i * nrows2 * nrows3 + j * nrows3 + k);
+            }
+          }
+          ++count;
+        }
+      }
+    }
+  }
+  return std::make_tuple(values, columns, rows);
+}
+
+template <class T>
+T *AffinityInitialMatches(T *distance1, T *distance2, T *distance3,
+                          unsigned nrows1, unsigned nrows2, unsigned nrows3,
+                          int *matches1, int *matches2, int *matches3,
+                          unsigned match_len) {
+
+  T *affinity_matches = new T[match_len * match_len];
+  int count = 0;
+  for (int i = 0; i < match_len; i++) {
+    for (int j = 0; j < match_len; j++) {
+      if (i == j) {
+        affinity_matches[count] = 0;
+      } else {
+        int idx_mat1 = matches1[i] * nrows1 + matches1[j];
+        int idx_mat2 = matches2[i] * nrows2 + matches2[j];
+        int idx_mat3 = matches3[i] * nrows3 + matches3[j];
+
+        if (distance1[idx_mat1] - distance2[idx_mat2] < distance3[idx_mat3] <
+            distance1[idx_mat1] + distance2[idx_mat2]) {
+          affinity_matches[count] =
+              (4.5 * sqrt(3 * fabs(distance1[idx_mat1] - distance2[idx_mat2] +
+                                   distance3[idx_mat3]) *
+                          fabs(distance1[idx_mat1] + distance2[idx_mat2] -
+                               distance3[idx_mat3]) *
+                          fabs(-distance1[idx_mat1] + distance2[idx_mat2] +
+                               distance3[idx_mat3]) *
+                          fabs(distance1[idx_mat1] + distance2[idx_mat2] +
+                               distance3[idx_mat3]))) /
+              (pow(distance1[idx_mat1], 2) + pow(distance2[idx_mat2], 2) +
+               pow(distance3[idx_mat3], 2));
+        } else
+          affinity_matches[count] = 0;
+      }
+      ++count;
+    }
+  }
+  return affinity_matches;
+}
+
+template <class T>
+stdvec_tuple_t AffinityInitialmatchesCoo(T *distance1, T *distance2,
+                                         T *distance3, unsigned nrows1,
+                                         unsigned nrows2, unsigned nrows3,
+                                         int *matches1, int *matches2,
+                                         int *matches3, unsigned match_len) {
+
+  std::vector<double> values;
+  std::vector<int> columns;
+  std::vector<int> rows;
+
+  for (int i = 0; i < match_len; i++) {
+    for (int j = 0; j < match_len; j++) {
+
+      int idx_mat1 = matches1[i] * nrows1 + matches1[j];
+      int idx_mat2 = matches2[i] * nrows2 + matches2[j];
+      int idx_mat3 = matches3[i] * nrows3 + matches3[j];
+
+      if (i!=j && distance1[idx_mat1] - distance2[idx_mat2] < distance3[idx_mat3] <
+          distance1[idx_mat1] + distance2[idx_mat2]) {
+        double val =
+            (4.5 * sqrt(3 * fabs(distance1[idx_mat1] - distance2[idx_mat2] +
+                                 distance3[idx_mat3]) *
+                        fabs(distance1[idx_mat1] + distance2[idx_mat2] -
+                             distance3[idx_mat3]) *
+                        fabs(-distance1[idx_mat1] + distance2[idx_mat2] +
+                             distance3[idx_mat3]) *
+                        fabs(distance1[idx_mat1] + distance2[idx_mat2] +
+                             distance3[idx_mat3]))) /
+            (pow(distance1[idx_mat1], 2) + pow(distance2[idx_mat2], 2) +
+             pow(distance3[idx_mat3], 2));
+        if (val != 0) {
+          values.push_back(val);
+          rows.push_back(i);
+          columns.push_back(j);
+        }
+      }
+    }
+  }
+  return std::make_tuple(values, columns, rows);
+}
+
+template <class T>
+void CompressMatrix(h_vec_t<T> &values, h_vec_t<int> &columns,
+                    h_vec_t<int> &row_index, T *matrix, int nrows, int ncols) {
+  unsigned offset = 0;
+  row_index.push_back(offset);
+
+  for (int i = 0; i < nrows; ++i) {
+    offset = 0;
+    //++idx_r;
+    for (int j = 0; j < ncols; ++j) {
+      if (0 != matrix[i * ncols + j]) {
+        values.push_back(matrix[i * ncols + j]);
+        columns.push_back(j);
+        ++offset;
+      }
+    }
+    row_index.push_back(offset + row_index.back());
+  }
+}
+
+template <class T>
+h_vec_t<T> AffinityBlocks(T *distance2, T *distance3, unsigned key, int nrows2,
+                          int nrows3) {
+  h_vec_t<double> affinity;
+  // T *affinity = new T[nrows2 * nrows2 * nrows3 * nrows3];
+  int count = 0;
+  double value;
+  for (int l = 0; l < nrows2 * nrows3; ++l) {
+    for (int j = 0; j < nrows2; ++j) {
+      for (int k = 0; k < nrows3; ++k) {
+        if (count != l * nrows2 * nrows3 + l &&
+            key - distance2[j + (l / nrows3) * nrows2] <
+                distance3[k + (l % nrows3) * nrows3] <
+                key + distance2[j + (l / nrows3) * nrows2]) {
+
+          value =
+              (4.5 * sqrt(3 * fabs(key - distance2[j + (l / nrows3) * nrows2] +
+                                   distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(key + distance2[j + (l / nrows3) * nrows2] -
+                               distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(-key + distance2[j + (l / nrows3) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(key + distance2[j + (l / nrows3) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]))) /
+              (pow(key, 2) + pow(distance2[j + (l / nrows3) * nrows2], 2) +
+               pow(distance3[k + (l % nrows3) * nrows3], 2));
+        } else
+          value = 0;
+        // std::cout << value << " ";
+        affinity.push_back(value);
+
+        count++;
+      }
+    }
+    // std::cout << std::endl;
+  }
+  return affinity;
+}
+
+template <class T>
+stdvec_tuple_t AffinityBlocksCoo(T *distance2, T *distance3, const unsigned key,
+                                 const unsigned nrows2, const unsigned nrows3) {
+
+  std::vector<double> values;
+  std::vector<int> columns;
+  std::vector<int> rows;
+  int count = 0;
+  for (int l = 0; l < nrows2 * nrows3; ++l) {
+    for (int j = 0; j < nrows2; ++j) {
+      for (int k = 0; k < nrows3; ++k) {
+        if (count != l * nrows2 * nrows3 + l &&
+            key - distance2[j + (l / nrows3) * nrows2] <
+                distance3[k + (l % nrows3) * nrows3] <
+                key + distance2[j + (l / nrows3) * nrows2]) {
+
+          double val =
+              (4.5 * sqrt(3 * fabs(key - distance2[j + (l / nrows3) * nrows2] +
+                                   distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(key + distance2[j + (l / nrows3) * nrows2] -
+                               distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(-key + distance2[j + (l / nrows3) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]) *
+                          fabs(key + distance2[j + (l / nrows3) * nrows2] +
+                               distance3[k + (l % nrows3) * nrows3]))) /
+              (pow(key, 2) + pow(distance2[j + (l / nrows3) * nrows2], 2) +
+               pow(distance3[k + (l % nrows3) * nrows3], 2));
+          if (val != 0) {
+            values.push_back(val);
+            rows.push_back(l);
+            columns.push_back(j * nrows3 + k );
+          }
+        }
+        count++;
+      }
+    }
+  }
+
+  return std::make_tuple(values, columns, rows);
+}
+
 struct createCOO {
   int key;
   int row_len;
@@ -70,7 +357,7 @@ struct createCOO {
   template <typename T> __host__ __device__ void operator()(T x) {
 
     double difference = key - get<0>(get<0>(x));
-    if (fabs(difference) < 3 * SIGMA) {
+    if (key != 0 && get<0>(get<0>(x)) != 0 && fabs(difference) < 3 * SIGMA) {
       double val = 4.5 - pow(difference, 2) / (2 * pow(SIGMA, 2));
       if (0 != val) {
         get<0>(get<1>(x)) = val;
@@ -86,100 +373,16 @@ struct createCOO {
   }
 };
 
-
-template <class T>
-T *AffinityMatrixCtor(T *distance1, T *distance2, int nrows1,
-                      int nrows2) {
-
-  T *affinity = new T[nrows1 * nrows1 * nrows2 * nrows2];
-  std::fill(affinity, affinity + (nrows1 * nrows2), 0);
-
-  double difference = 0;
-  for (int k = 0; k < nrows1 * nrows2; ++k) {
-    int count = 0;
-    for (int i = 0; i < nrows1; ++i) {
-      for (int j = 0; j < nrows2; ++j) {
-
-        difference = distance1[i + (k / nrows2) * nrows1] -
-                     distance2[j + (k % nrows2) * nrows2];
-
-        if (fabs(difference) < 3 * SIGMA) {
-          affinity[k * nrows1 * nrows2 + count] =
-              4.5 - pow(difference, 2) / (2 * pow(SIGMA, 2));
-        } else
-          affinity[k * nrows1 * nrows2 + count] = 0;
-        ++count;
-      }
-    }
-  }
-
-  return affinity;
-}
-
-
-template <class T>
-T *AffinityInitialMatches(T *distance1, T *distance2, int nrows1,
-                          int nrows2, int *idx_mat1,
-                          int *idx_mat2, int match_len) {
-
-  T *affinity_matches = new T[match_len * match_len];
-  std::fill(affinity_matches, affinity_matches + (match_len * match_len), 0);
-  int count = 0;
-  double difference = 0;
-
-  for (int m = 0; m < match_len; m++) {
-    for (int n = 0; n < match_len; n++) {
-      difference = distance1[idx_mat1[m] * nrows1 + idx_mat1[n]] -
-                   distance2[idx_mat2[m] * nrows2 + idx_mat2[n]];
-      if (fabs(difference) < 3 * SIGMA) {
-        affinity_matches[count] =
-            4.5 - pow(difference, 2) / (2 * pow(SIGMA, 2));
-      }
-
-      else
-        affinity_matches[count] = 0;
-
-      ++count;
-      // std::cout<< "value1: " << affinity[count] << std::endl;
-    }
-  }
-  return affinity_matches;
-}
-
-
-template <class T>
-void CompressMatrix(h_vec_t<T> &values, h_vec_t<int> &columns,
-                    h_vec_t<int> &row_index, T *matrix, int nrows, int ncols) {
-  unsigned offset = 0;
-  row_index.push_back(offset);
-  
-  for (int i = 0; i < nrows; ++i) {
-    offset = 0;
-    //++idx_r;
-    for (int j = 0; j < ncols; ++j) {
-      if (0 != matrix[i * ncols + j]) {
-        values.push_back(matrix[i * ncols + j]);
-        columns.push_back(j);
-        ++offset;
-      }
-    }
-    row_index.push_back(offset + row_index.back());
-  }
-}
-
-
 struct Affinity {
   int key;
   Affinity(int _key) : key(_key) {}
   __host__ __device__ double operator()(double x) {
-    double difference = key - x;
-    if (fabs(difference) < 3 * SIGMA) {
-      return (4.5 - pow(difference, 2) / (2 * pow(SIGMA, 2)));
+    if (x != 0 && key != 0 && fabs(key - x) < 3 * SIGMA) {
+      return (4.5 - pow(fabs(key - x), 2) / (2 * pow(SIGMA, 2)));
     } else
       return 0;
   }
 };
-
 
 // square<T> computes the square of a number f(x) -> x*x
 struct square {
@@ -209,7 +412,8 @@ struct division {
  * \param num_rows
  *  Number of rows in of matrix.
  * \param num_cols
- *  Number of columns in of matrix. It is set to num_rows if not defined (i.e.,
+ *  Number of columns in of matrix. It is set to num_rows if not defined
+ * (i.e.,
  *  assumed as a symmetric matrix.)
  */
 template <class T>
@@ -246,7 +450,8 @@ void ReadMatrix(h_vec_t<T> &matrix, std::string file_name, int num_rows,
  * \param num_rows
  *  Number of rows in the matrix.
  * \param num_cols
- *  Number of columns in of matrix. It is set to num_rows if not defined (i.e.,
+ *  Number of columns in of matrix. It is set to num_rows if not defined
+ * (i.e.,
  *  assumed as a symmetric matrix.)
  */
 template <class T>
@@ -271,7 +476,8 @@ void PrintMatrix(h_vec_t<T> mtrx, int num_rows, int num_cols = 0) {
 
 template <class T>
 void ReadMatchedFeatures(host_vector<T> &features_1, host_vector<T> &features_2,
-                         std::string file_name, int num_matched) {
+                         host_vector<T> &features_3, std::string file_name,
+                         int num_matched) {
 
   std::ifstream file_content(file_name.c_str(), std::ios::in);
   if (!file_content) {
@@ -282,6 +488,7 @@ void ReadMatchedFeatures(host_vector<T> &features_1, host_vector<T> &features_2,
   for (int i = 0; i < num_matched; ++i) {
     file_content >> features_1[i];
     file_content >> features_2[i];
+    file_content >> features_3[i];
   }
 }
 
@@ -336,5 +543,17 @@ protected:
   Itr last;
   int stride;
 };
+
+
+template <class T> T VectorNorm(T *v, const unsigned length) {
+  T norm = 0;
+
+  for (int i = 0; i < length; ++i) {
+    norm += v[i] * v[i];
+  }
+  norm = sqrt(norm);
+
+  return norm;
+}
 
 #endif // INCLUDE_UTILS_H_

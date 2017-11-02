@@ -157,9 +157,10 @@ int main(int argc, char *argv[]) {
 
     csr_blocked_len.push_back(csr_val.size());
   }
+
   std::cout << "affinity runtime: "
             << float(clock() - begin_time) / CLOCKS_PER_SEC * 1000 << std::endl;
-
+  
   d_vec_t<double> d_csr_val = csr_val;
   d_vec_t<int> d_csr_col = csr_col;
   d_vec_t<int> d_csr_row = csr_row;
@@ -168,14 +169,13 @@ int main(int argc, char *argv[]) {
   //std::cout << "values"
     //          << "  "
     //          << "columns" << std::endl;
-  
-    //for (int i = 0; i < h_uniq_keys.size(); ++i) {
-  //  for (int j = csr_blocked_len[i]; j < csr_blocked_len[i + 1]; ++j) {
-  //    std::cout << csr_val[j] << "   " << csr_col[j] << "  " << std::endl;
-  //  }
-  //  std::cout << std::endl;
-  //}
-  //std::cout << std::endl;
+ // for (int i = 0; i < h_uniq_keys.size(); ++i) {
+ //   for (int j = csr_blocked_len[i]; j < csr_blocked_len[i + 1]; ++j) {
+ //     std::cout << csr_val[j] << "   " << csr_col[j] << "  " << std::endl;
+ //   }
+ //   std::cout << std::endl;
+ // }
+ // std::cout << std::endl;
 
   /******************************************************
   *             initialize eigen vectors                *
@@ -243,14 +243,14 @@ int main(int argc, char *argv[]) {
 
   std::cout << "Eigen runtime: "
             << float(clock() - begin_time2) / CLOCKS_PER_SEC * 1000 << std::endl;
-  
- // std::cout << "eigen values" << std::endl;
- // for (int i = 0; i < eigen_vec_old.size(); i++) {
- //   std::cout << "eigen new value = " << eigen_vec_new[i] << "";
- //   std::cout << "eigen old value = " << eigen_vec_old[i] << std::endl;
- // }
- 
-  cusparseDestroy(handle);
+
+//  std::cout << "eigen values" << std::endl;
+//  for (int i = 0; i < eigen_vec_old.size(); i++) {
+//    std::cout << "eigen new value = " << eigen_vec_new[i] << "";
+//    std::cout << "eigen old value = " << eigen_vec_old[i] << std::endl;
+//  }
+
+    cusparseDestroy(handle);
 
   return 0;
 }
